@@ -1,9 +1,26 @@
+from google.genai import types
 import os
 import sys
+from functions.get_files_info import schema_get_files_info
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+system_prompt = """
+You are a helpful AI coding agent.
+
+When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
+
+- List files and directories
+
+All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
+"""
+
+available_functions = types.Tool(
+    function_declarations=[
+        schema_get_files_info,
+    ]
+)
 
 def main():
     load_dotenv()
@@ -33,18 +50,26 @@ def generate_content(client, messages, verbose=False):
     response = client.models.generate_content(
     model="gemini-2.0-flash-001",
     contents=messages,
+    config=types.GenerateContentConfig(
+        tools=[available_functions], system_instruction=system_prompt
+        )
     )
     
-    if verbose == True:
-        print("User prompt:")
-        print(response.text)
-        print("Prompt tokens:")
-        print(response.usage_metadata.prompt_token_count)
-        print("Response tokens:")
-        print(response.usage_metadata.candidates_token_count)
+    if response.function_calls:
+        first_call = response.function_calls[0]
+        print(f"Calling function: {first_call.name}({first_call.args})")
     else:
-        print("Response:")
-        print(response.text)
+
+        if verbose == True:
+            print("User prompt:")
+            print(response.text)
+            print("Prompt tokens:")
+            print(response.usage_metadata.prompt_token_count)
+            print("Response tokens:")
+            print(response.usage_metadata.candidates_token_count)
+        else:
+            print("Response:")
+            print(response.text)
 
 
 if __name__ == "__main__":
