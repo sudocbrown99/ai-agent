@@ -5,6 +5,7 @@ from functions.get_files_info import schema_get_files_info
 from functions.get_file_content import schema_get_file_content
 from functions.run_python import schema_run_python_file
 from functions.write_file import schema_write_file
+from functions.call_function import call_function
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -53,7 +54,18 @@ def main():
         types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
 
-    generate_content(client, messages, verbose)
+    for i in range(20):
+        try:
+            messages, response = generate_content(client, messages, verbose)
+
+            if response.text and not response.function_calls:
+                print("Final response:")
+                print(response.text)
+                break
+        
+        except Exception as e:
+            print(f"Error: {e}")
+            break
 
 def generate_content(client, messages, verbose=False):
     response = client.models.generate_content(
@@ -63,22 +75,25 @@ def generate_content(client, messages, verbose=False):
         tools=[available_functions], system_instruction=system_prompt
         )
     )
+
+    for candidate in response.candidates:
+        messages.append(candidate.content)
     
     if response.function_calls:
         first_call = response.function_calls[0]
-        print(f"Calling function: {first_call.name}({first_call.args})")
-    else:
+        function_call_result = call_function(first_call, verbose)
 
-        if verbose == True:
-            print("User prompt:")
-            print(response.text)
-            print("Prompt tokens:")
-            print(response.usage_metadata.prompt_token_count)
-            print("Response tokens:")
-            print(response.usage_metadata.candidates_token_count)
+        if not function_call_result.parts or not hasattr(function_call_result.parts[0], "function_response"):
+            raise Exception("Function response missing")
+        
+        result = function_call_result.parts[0].function_response.response
+        messages.append(types.Content(role="tool", parts=[function_call_result.parts[0]]))
+        if verbose:
+            print(f"-> {result}")
         else:
-            print("Response:")
-            print(response.text)
+            print(result)
+    
+    return messages, response
 
 
 if __name__ == "__main__":
